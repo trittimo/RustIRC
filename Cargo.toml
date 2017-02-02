@@ -3,3 +3,6 @@
 name = "irc"
 version = "0.0.1"
 authors = [ "Michael Trittin <trittimo@rose-hulman.edu>", "Jim Gildersleeve <gilderjw@rose-hulman.edu>" ]
+
+[dependencies]
+lazy_static = "0.2"
