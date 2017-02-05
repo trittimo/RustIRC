@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, Shutdown};
 use std::thread;
 use std::sync::{Arc, Mutex};
 
@@ -131,6 +131,11 @@ fn handle_cap(ref mut stream: &TcpStream) {
   let _ = stream.write(response.as_bytes());
 }
 
+fn handle_quit(cmd: Vec<&str>, ref mut stream: &TcpStream) {
+  stream.shutdown(Shutdown::Both);
+  //TODO: add logic to remove that user
+}
+
 fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
   let tmp = String::from_utf8_lossy(cmd);
   let command: Vec<&str> = tmp.split_whitespace().collect();
@@ -142,6 +147,7 @@ fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: &Arc<Mutex<IRCS
       "JOIN" => handle_join(command, stream, &state),
       "PING" => handle_ping(command, stream),
       "CAP" => handle_cap(stream),
+      "QUIT" => handle_quit(command, stream),
       _ => println!("unknown command {}", command[0])
   }
   // stream 
