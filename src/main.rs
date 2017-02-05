@@ -2,9 +2,7 @@ use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::sync::{Arc, Mutex};
-use std::fmt;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 struct User {
   username: String,
@@ -25,9 +23,6 @@ impl User {
   }
 }
 
-
-
-#[allow(dead_code)]
 #[derive(Debug)]
 struct Channel {
   name: String,
@@ -45,7 +40,6 @@ impl Channel {
   }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 struct IRCState {
   users: Vec<User>,
@@ -69,8 +63,8 @@ fn main() {
   let listener = TcpListener::bind("127.0.0.1:6667").unwrap();
   
   // Add our dank channels
-  state.add_channel(Channel::new("Memes", "Where to find all the dankest memes"));
-  state.add_channel(Channel::new("Garbage", "where all the Otaku talk about anime [censored]"));
+  state.add_channel(Channel::new("memes", "Where to find all the dankest memes"));
+  state.add_channel(Channel::new("anim00_garbage", "where all the Otaku talk about anime [censored]"));
 
   // Declare our shared state for threaded use
   let shared_state = Arc::new(Mutex::new(state));
@@ -92,7 +86,11 @@ fn handle_user(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRC
   println!("recieved USER command");
   let ref mut users = state.lock().unwrap().users;
   users.push(User::new(cmd[1], cmd[1], cmd[2], cmd[3]));
-  let response = format!(":RustIRC Welcome to RustIRC!\r\n");
+  let mut response = format!("PING :3813401942\r\n");
+  let _ = stream.write(response.as_bytes());
+
+  response = String::from(":localhost 001 jeem :Welcome to RustIRC!");
+
   let _ = stream.write(response.as_bytes());
 }
 
@@ -112,10 +110,20 @@ fn handle_list(ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
     for user in users {
       response = response + user.username.as_str() + ","
     }
-    response = response + ": " + channel.topic.as_str() + "\r\n";
+    response = response + ":" + channel.topic.as_str() + "\r\n";
   }
+  let _ = stream.write(response.as_bytes());
+}
 
-  let _ = stream.write("alwl".as_bytes());
+fn handle_join(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+  println!("recieved JOIN command");
+  let mut response = ":jeem JOIN #memes";
+  let _ = stream.write(response.as_bytes());
+}
+
+fn handle_ping(cmd: Vec<&str>, ref mut stream: &TcpStream) {
+  let response : String = String::from("PONG :") + cmd[1];
+  let _ = stream.write(response.as_bytes()); 
 }
 
 fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
@@ -126,6 +134,8 @@ fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: &Arc<Mutex<IRCS
       "NICK" => handle_nick(command, stream, &state),
       "USER" => handle_user(command, stream, &state),
       "LIST" => handle_list(stream, &state),
+      "JOIN" => handle_join(command, stream, &state),
+      "PING" => handle_ping(command, stream),
       _ => println!("unknown command {}", command[0])
   }
   // stream
@@ -147,7 +157,7 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<IRCState>>) {
     };
 
     handle_command(&buf, &stream, &state);
-    //println!("\t{:?}\n\t", state.lock().unwrap().channels, state.lock().unwrap());
-    println!("User at address {} said {}\n", stream.peer_addr().unwrap(), String::from_utf8_lossy(&buf) );
+    // println!("\t{:?}\n\t", state.lock().unwrap().channels);
+    println!("User at address {} said {}\n", stream.peer_addr().unwrap(), String::from_utf8_lossy(&buf));
   }
 }
