@@ -2,8 +2,10 @@ use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::sync::{Arc, Mutex};
+use std::fmt;
 
 #[allow(dead_code)]
+#[derive(Debug)]
 struct User {
   username: String,
   realname: String,
@@ -23,7 +25,10 @@ impl User {
   }
 }
 
+
+
 #[allow(dead_code)]
+#[derive(Debug)]
 struct Channel {
   name: String,
   topic: String,
@@ -41,6 +46,7 @@ impl Channel {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 struct IRCState {
   users: Vec<User>,
   channels: Vec<Channel>,
@@ -141,6 +147,7 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<IRCState>>) {
     };
 
     handle_command(&buf, &stream, &state);
+    //println!("\t{:?}\n\t", state.lock().unwrap().channels, state.lock().unwrap());
     println!("User at address {} said {}\n", stream.peer_addr().unwrap(), String::from_utf8_lossy(&buf) );
   }
 }
