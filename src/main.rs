@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use std::net::{TcpListener, TcpStream, Shutdown};
+use std::net::{TcpListener, TcpStream, Shutdown, SocketAddr};
 use std::thread;
 use std::sync::{Arc, Mutex};
 
@@ -9,16 +9,18 @@ struct User {
   realname: String,
   hostname: String,
   servername: String,
+  address: SocketAddr
 }
 
 impl User {
   fn new(username: &str, realname: &str,
-         hostname: &str, servername: &str) -> User {
+         hostname: &str, servername: &str, address: SocketAddr) -> User {
     User {
       username: String::from(username),
       realname: String::from(realname),
       hostname: String::from(hostname),
-      servername: String::from(servername)
+      servername: String::from(servername),
+      address: address
     }
   }
 }
@@ -64,8 +66,8 @@ fn main() {
   
   // Add our dank channels
 
-  state.add_channel(Channel::new("memes", "Where to find all the dankest memes"));
-  state.add_channel(Channel::new("anim00_garbage", "where all the Otaku talk about anime [censored]"));
+  state.add_channel(Channel::new("#memes", "Where to find all the dankest memes"));
+  state.add_channel(Channel::new("#anim00_garbage", "where all the Otaku talk about anime [censored]"));
 
   // Declare our shared state for threaded use
   let shared_state = Arc::new(Mutex::new(state));
@@ -86,7 +88,7 @@ fn main() {
 fn handle_user(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
   println!("recieved USER command");
   let ref mut users = state.lock().unwrap().users;
-  users.push(User::new(cmd[1], cmd[1], cmd[2], cmd[3]));
+  users.push(User::new(cmd[1], cmd[1], cmd[2], cmd[3], stream.peer_addr().unwrap()));
   let mut response = format!("PING :3813401942\r\n");
   let _ = stream.write(response.as_bytes());
 
@@ -117,8 +119,37 @@ fn handle_list(ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
 
 fn handle_join(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
   println!("recieved JOIN command");
-  let mut response = ":jeem JOIN #memes";
-  let _ = stream.write(response.as_bytes());
+  let ref mut users = state.lock().unwrap().users;
+  let ref mut channels = state.lock().unwrap().channels;
+  let addr = stream.peer_addr().unwrap();
+  let found_user = users.iter().find(|x| {
+    x.address.ip() == addr.ip() && x.address.port() == addr.port()
+  });
+  let found_channel = channels.iter().find(|x| {
+    x.name == cmd[1]
+  });
+
+  let tomatch = (found_user, found_channel);
+  // Honestly don't know how to handle this
+  // Can't get mutable reference to channel.users
+  // let ref mut users: Vec<User>;
+  // match tomatch {
+  //   (Some(user), Some(channel)) => {
+  //     let mut response = format!(":localhost 332 {0} {1} {2}\r\n",
+  //                             user.username, cmd[1], channel.topic);
+  //     let _ = stream.write(response.as_bytes());
+  //     let users = &channel.users;
+  //     users.push(*user);
+  //     let current_users = channel.users.iter().fold("".to_string(), |acc, x| {
+  //       x.username + " " + &acc
+  //     });
+  //   },
+  //   (Some(user), _) => {
+  //     // Whatever happens when the channel doesn't exist
+  //     println!("Couldn't find channel: {:?}", cmd[1])
+  //   }
+  //   _ => println!("Couldn't find user")
+  // }
 }
 
 fn handle_ping(cmd: Vec<&str>, ref mut stream: &TcpStream) {
@@ -150,7 +181,6 @@ fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: &Arc<Mutex<IRCS
       "QUIT" => handle_quit(command, stream),
       _ => println!("unknown command {}", command[0])
   }
-  // stream 
 }
 
 fn handle_client(mut stream: TcpStream, state: Arc<Mutex<IRCState>>) {
