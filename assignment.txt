@@ -1,13 +1,8 @@
-Our project will be a minimally functional IRC client and server. We will break down the assignment of points as follows:
+Our project will be a minimally functional IRC server. We will break down the assignment of points as follows:
 
-CLIENT:
-	1. [5 points] Connect to a server (for testing purposes, just display the message of the day)
-	2. [15 points] Send heartbeats to the server to ensure the client is not kicked, and disconnect if there is no heartbeat response
-	3. [15 points] Send messages to the server
-	4. [15 points] Receive messages from the server
-
-SERVER:
-	1. [5 points] Receive connections from a client, and send them the motd
-	2. [15 points] Receive heartbeats from the client, and disconnect them if a heartbeat is not received within a certain interval
-	3. [15 points] Receive messages from the client
-	4. [15 points] Forward messages to everyone
+1. [5 points] Receive connections from a client, and send them the motd
+2. [20 points] Receive heartbeats from the client, and disconnect them if a heartbeat is not received within a certain interval
+3. [20 points] Receive messages from the client
+4. [20 points] Forward messages to everyone
+5. [20 points] Support for multiple channels
+6. [15 points] Support for whisper messages
