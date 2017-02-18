@@ -2,6 +2,14 @@ use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream, Shutdown, SocketAddr};
 use std::thread;
 use std::sync::{Arc, Mutex};
+#[macro_use]
+extern crate lazy_static;
+
+
+lazy_static!{
+  static ref STATE: Arc<Mutex<IRCState<'static>>>  = Arc::new(Mutex::new(IRCState::new()));
+}
+
 
 struct User {
   username: String,
@@ -60,15 +68,9 @@ impl<'a> IRCState<'a> {
   }
 }
 
-fn setupChannels(irc: &mut IRCState) {
-  irc.add_channel("#general", "Anything goes");
-  irc.add_channel("#rust", "Complain about rust here");
-}
-
-
-fn handle_user(cmd: Vec<&str>, mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_user(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved USER command");
-  let ref mut users = state.lock().unwrap().users;
+  let ref mut users = STATE.lock().unwrap().users;
   users.push(User::new(cmd[1], cmd[1], cmd[2], cmd[3], stream.peer_addr().unwrap()));
   let mut response = format!("PING :3813401942\r\n");
   let _ = stream.write(response.as_bytes());
@@ -78,15 +80,15 @@ fn handle_user(cmd: Vec<&str>, mut stream: &TcpStream, state: &Arc<Mutex<IRCStat
   let _ = stream.write(response.as_bytes());
 }
 
-fn handle_nick(cmd: Vec<&str>, mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_nick(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved NICK command");
   let response = format!(":{0} NICK {0}\r\n", cmd[1]);
   let _ = stream.write(response.as_bytes());
 }
 
-fn handle_list(mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_list(mut stream: &TcpStream) {
   println!("recieved LIST command");
-  let ref mut channels = state.lock().unwrap().channels;
+  let ref mut channels = STATE.lock().unwrap().channels;
   let mut response : String = ":localhost 321 jeem Channel :Users  Name\r\n".into();
   for channel in channels.iter() {
     response = response + format!(":localhost 322 jeem #{0} {1} :{2}\r\n", 
@@ -98,10 +100,10 @@ fn handle_list(mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
   let _ = stream.write(response.as_bytes());
 }
 
-fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved JOIN command");
-  let users = &mut state.lock().unwrap().users;
-  let channels = &mut state.lock().unwrap().channels;
+  let ref mut users = STATE.lock().unwrap().users;
+  let ref mut channels = STATE.lock().unwrap().channels;
   let addr = stream.peer_addr().unwrap();
   let mut user: Option<&mut User> = None;
   for x in users {
@@ -157,15 +159,15 @@ fn handle_quit(cmd: Vec<&str>, stream: &TcpStream) {
   //TODO: add logic to remove that user
 }
 
-fn handle_command(cmd: &[u8], mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_command(cmd: &[u8], mut stream: &TcpStream) {
   let tmp = String::from_utf8_lossy(cmd);
   let command: Vec<&str> = tmp.split_whitespace().collect();
 
   match command[0] {
-      "NICK" => handle_nick(command, stream, state),
-      "USER" => handle_user(command, stream, state),
-      "LIST" => handle_list(stream, state),
-      "JOIN" => handle_join(command, stream, state),
+      "NICK" => handle_nick(command, stream),
+      "USER" => handle_user(command, stream),
+      "LIST" => handle_list(stream),
+      "JOIN" => handle_join(command, stream),
       "PING" => handle_ping(command, stream),
       "CAP" => handle_cap(stream),
       "QUIT" => handle_quit(command, stream),
@@ -173,7 +175,7 @@ fn handle_command(cmd: &[u8], mut stream: &TcpStream, state: &Arc<Mutex<IRCState
   }
 }
 
-fn handle_client(mut stream: TcpStream, state: Arc<Mutex<IRCState>>) {
+fn handle_client(mut stream: TcpStream) {
   let mut buf;
   loop {
     buf = [0; 512];
@@ -188,29 +190,33 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<IRCState>>) {
       }
     }
 
-    handle_command(&buf, &stream, &state);
+    handle_command(&buf, &stream);
   }
 }
 
-fn listen(irc: IRCState, listener: TcpListener) {
+fn listen(listener: TcpListener) {
 
-  let state = Arc::new(Mutex::new(irc));
+
   for stream in listener.incoming() {
     match stream {
       Err(e) => { println!("Error in stream: {}", e)}
       Ok(stream) => {
-        let st = state.clone();
+        // let st = irc.clone();
         thread::spawn(move || {
-          handle_client(stream, st);
+          handle_client(stream);
         });
       }
     }
   }
 }
 
+
 fn main() {
-  let mut irc = IRCState::new();
+  // let state = Arc::new(Mutex::new(IRCState::new()));
   let listener = TcpListener::bind("127.0.0.1:6667").unwrap();
-  setupChannels(&mut irc);
-  listen(irc, listener);
+  let mut irc = STATE.lock().unwrap();
+  irc.add_channel("#general", "Anything goes");
+  irc.add_channel("#rust", "Complain about rust here");
+
+  listen(listener);
 }
