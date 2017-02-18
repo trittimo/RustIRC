@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream, SocketAddr};
-use std::thread;
+use std::{thread, time};
 use std::sync::{Arc, Mutex};
 #[macro_use]
 extern crate lazy_static;
@@ -142,6 +142,10 @@ fn handle_cap(mut stream: &TcpStream) {
 //   //TODO: add logic to remove that user
 // }
 
+fn handle_pong(mut stream: &TcpStream) {
+
+}
+
 fn handle_command(cmd: &[u8], stream: &TcpStream) {
   let tmp = String::from_utf8_lossy(cmd);
   let command: Vec<&str> = tmp.split_whitespace().collect();
@@ -152,6 +156,7 @@ fn handle_command(cmd: &[u8], stream: &TcpStream) {
       "LIST" => handle_list(stream),
       "JOIN" => handle_join(command, stream),
       "PING" => handle_ping(command, stream),
+      "PONG" => handle_pong(stream),
       "CAP" => handle_cap(stream),
       // "QUIT" => handle_quit(command, stream),
       _ => println!("unknown command {}", command[0])
@@ -159,6 +164,16 @@ fn handle_command(cmd: &[u8], stream: &TcpStream) {
 }
 
 fn handle_client(mut stream: TcpStream) {
+  let mut clone = stream.try_clone().unwrap();
+  thread::spawn(move || {
+    let to_sleep = time::Duration::from_secs(5);
+    loop {
+      println!("PINGING");
+      thread::sleep(to_sleep);
+      let _ = clone.write("PING\r\n".as_bytes());
+    }
+  });
+
   let mut buf;
   loop {
     buf = [0; 512];
@@ -186,7 +201,6 @@ fn main() {
     channels.push(Channel::new("#general", "Anything goes"));
     channels.push(Channel::new("#rust", "Complain about rust here"));
   }
-
 
   for stream in listener.incoming() {
     match stream {
