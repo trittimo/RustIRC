@@ -142,8 +142,39 @@ fn handle_cap(mut stream: &TcpStream) {
 //   //TODO: add logic to remove that user
 // }
 
-fn handle_pong(mut stream: &TcpStream) {
+fn addr_to_user(stream: &TcpStream) -> Option<User> {
+  let users = USERS.lock().unwrap();
+  let addr = stream.peer_addr().unwrap();
+  for x in users.iter() {
+    if x.address.ip() == addr.ip() && x.address.port() == addr.port() {
+      return Some(x.clone());
+    }
+  }
+  None
+}
 
+fn handle_privmsg(cmd: Vec<&str>, mut stream: &TcpStream) {
+  println!("recieved PRIVMSG\n");
+  let channel_name = cmd[1];
+  let channels =  CHANNELS.lock().unwrap();
+
+  for c in channels.iter() {
+    if c.name == channel_name {
+      let user = addr_to_user(stream);
+      match user {
+        Some(u) => {
+          let response = String::from(format!(":{0} PRIVMSG {1} {2}", u.username, channel_name, cmd[3]));
+          let _ = stream.write(response.as_bytes());
+        },
+        None => {
+          println!("who dafaq is dis?");
+        }
+      }
+
+    }
+  }
+
+  println!("broadcasting to {}", channel_name);
 }
 
 fn handle_command(cmd: &[u8], stream: &TcpStream) {
@@ -158,6 +189,7 @@ fn handle_command(cmd: &[u8], stream: &TcpStream) {
       "PING" => handle_ping(command, stream),
       "PONG" => handle_pong(stream),
       "CAP" => handle_cap(stream),
+      "PRIVMSG" => handle_privmsg(command, stream),
       // "QUIT" => handle_quit(command, stream),
       _ => println!("unknown command {}", command[0])
   }
