@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::net::{TcpListener, TcpStream, Shutdown, SocketAddr};
 use std::{thread, time};
 use std::sync::{Arc, Mutex};
 #[macro_use]
@@ -17,7 +17,8 @@ struct User {
   realname: String,
   hostname: String,
   servername: String,
-  address: SocketAddr
+  address: SocketAddr,
+  last_pong: i32
 }
 
 impl User {
@@ -31,8 +32,15 @@ impl User {
       realname: String::from(realname),
       hostname: String::from(hostname),
       servername: String::from(servername),
-      address: address
+      address: address,
+      last_pong: 0
     }
+  }
+  fn refresh(&mut self) {
+    self.last_pong = 0;
+  }
+  fn increment(&mut self) {
+    self.last_pong += 1;
   }
 }
 
@@ -142,12 +150,18 @@ fn handle_cap(mut stream: &TcpStream) {
 //   //TODO: add logic to remove that user
 // }
 
+fn handle_pong(mut stream: &TcpStream) {
+  println!("received PONG");
+}
+
 fn addr_to_user(stream: &TcpStream) -> Option<User> {
   let users = USERS.lock().unwrap();
   let addr = stream.peer_addr().unwrap();
   for x in users.iter() {
     if x.address.ip() == addr.ip() && x.address.port() == addr.port() {
       return Some(x.clone());
+    } else {
+      println!("ip {:?} != {:?}\naddr {:?} !+ {:?}\n", x.address.ip(), addr.ip(), x.address.port(), addr.port());
     }
   }
   None
@@ -177,10 +191,20 @@ fn handle_privmsg(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("broadcasting to {}", channel_name);
 }
 
+fn refresh(stream: &TcpStream) {
+  let addr = stream.peer_addr().unwrap();
+  let mut users = USERS.lock().unwrap();
+  for user in users.iter_mut() {
+    if user.address.ip() == addr.ip() && user.address.port() == addr.port() {
+      user.refresh();
+    }
+  }
+}
+
 fn handle_command(cmd: &[u8], stream: &TcpStream) {
   let tmp = String::from_utf8_lossy(cmd);
   let command: Vec<&str> = tmp.split_whitespace().collect();
-
+  refresh(stream);
   match command[0] {
       "NICK" => handle_nick(command, stream),
       "USER" => handle_user(command, stream),
@@ -195,6 +219,16 @@ fn handle_command(cmd: &[u8], stream: &TcpStream) {
   }
 }
 
+fn increment(stream: &TcpStream) {
+  let addr = stream.peer_addr().unwrap();
+  let mut users = USERS.lock().unwrap();
+  for user in users.iter_mut() {
+    if user.address.ip() == addr.ip() && user.address.port() == addr.port() {
+      user.increment();
+    }
+  }
+}
+
 fn handle_client(mut stream: TcpStream) {
   let mut clone = stream.try_clone().unwrap();
   thread::spawn(move || {
@@ -203,6 +237,19 @@ fn handle_client(mut stream: TcpStream) {
       println!("PINGING");
       thread::sleep(to_sleep);
       let _ = clone.write("PING\r\n".as_bytes());
+      increment(&clone);
+      match addr_to_user(&clone) {
+        Some(user) => {
+          println!("Couldn't find user");
+          if user.last_pong > 5 {
+            println!("Disconnecting user because they didn't respond");
+            let _ = clone.shutdown(Shutdown::Both);
+          }
+        },
+        _ => {
+          // Do nothing
+        }
+      }
     }
   });
 
