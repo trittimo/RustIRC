@@ -52,23 +52,6 @@ impl Channel {
   }
 }
 
-// struct IRCState<'a> {
-//   users: Vec<User>,
-//   channels: Vec<Channel<'a>>,
-// }
-
-// impl<'a> IRCState<'a> {
-//   fn new() -> IRCState<'a> {
-//     IRCState {
-//       users: Vec::new(),
-//       channels: Vec::new(),
-//     }
-//   }
-//   fn add_channel(&mut self, name: &str, topic: &str) {
-//     self.channels.push(Channel::new(name, topic));
-//   }
-// }
-
 fn handle_user(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved USER command");
   let ref mut users = USERS.lock().unwrap();
@@ -122,29 +105,24 @@ fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
     }
   }
 
-  match user {
-    Some(u) => {
-      match channel {
-        Some(c) => {
-          let response = format!(":localhost 332 {0} {1} {2}\r\n",
+  match (user, channel) {
+    (Some(u), Some(c)) => {
+      let response = format!(":localhost 332 {0} {1} {2}\r\n",
                               u.username, cmd[1], c.topic);
-          let _ = stream.write(response.as_bytes());
-          c.users.push(u.clone());
-          let current_users = c.users.iter().fold("".to_string(), |acc, x| {
-            x.username.clone() + " " + &acc
-          });
-          let _ = stream.write(current_users.as_bytes());
-        }
-        None => {
-          // That particular channel doesn't exist: inform the user of that
-          // TODO
-          return;
-        }
-      }
+      let _ = stream.write(response.as_bytes());
+      c.users.push(u.clone());
+      let current_users = c.users.iter().fold("".to_string(), |acc, x| {
+        x.username.clone() + " " + &acc
+      });
+      let _ = stream.write(current_users.as_bytes());
     },
-    None => {
-      // The user hasn't connected? This is a strange case
-      return;
+    (Some(u), _) => {
+      // No such channel exists
+      // TODO
+    },
+    _ => {
+      // Unknown state
+      // TODO
     }
   }
 }
