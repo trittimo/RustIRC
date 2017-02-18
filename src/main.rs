@@ -3,6 +3,8 @@ use std::net::{TcpListener, TcpStream, Shutdown, SocketAddr};
 use std::thread;
 use std::sync::{Arc, Mutex};
 
+mod server;
+
 #[derive(Debug)]
 struct User {
   username: String,
@@ -61,31 +63,32 @@ impl IRCState {
 }
 
 fn main() {
-  let mut state = IRCState::new();
-  let listener = TcpListener::bind("127.0.0.1:6667").unwrap();
+  server::run("127.0.0.1:6667");
+  // let mut state = &IRCState::new();
+  // let listener = TcpListener::bind("127.0.0.1:6667").unwrap();
   
-  // Add our dank channels
+  // // Add our dank channels
 
-  state.add_channel(Channel::new("#memes", "Where to find all the dankest memes"));
-  state.add_channel(Channel::new("#anim00_garbage", "where all the Otaku talk about anime [censored]"));
+  // state.add_channel(Channel::new("#memes", "Where to find all the dankest memes"));
+  // state.add_channel(Channel::new("#anim00_garbage", "where all the Otaku talk about anime [censored]"));
 
-  // Declare our shared state for threaded use
-  let shared_state = Arc::new(Mutex::new(state));
+  // // Declare our shared state for threaded use
+  // let shared_state = Arc::new(Mutex::new(state));
 
-  for stream in listener.incoming() {
-    match stream {
-      Err(e) => { println!("Error in stream: {}", e)}
-      Ok(stream) => {
-        let st = shared_state.clone();
-        thread::spawn(move || {
-          handle_client(stream, st);
-        });
-      }
-    }
-  }
+  // for stream in listener.incoming() {
+  //   match stream {
+  //     Err(e) => { println!("Error in stream: {}", e)}
+  //     Ok(stream) => {
+  //       let mut st = &shared_state.clone();
+  //       thread::spawn(move || {
+  //         // handle_client(stream, st);
+  //       });
+  //     }
+  //   }
+  // }
 }
 
-fn handle_user(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_user(cmd: Vec<&str>, ref mut stream: &TcpStream, state: Arc<Mutex<&mut IRCState>>) {
   println!("recieved USER command");
   let ref mut users = state.lock().unwrap().users;
   users.push(User::new(cmd[1], cmd[1], cmd[2], cmd[3], stream.peer_addr().unwrap()));
@@ -97,13 +100,13 @@ fn handle_user(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRC
   let _ = stream.write(response.as_bytes());
 }
 
-fn handle_nick(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_nick(cmd: Vec<&str>, ref mut stream: &TcpStream, state: Arc<Mutex<&mut IRCState>>) {
   println!("recieved NICK command");
   let response = format!(":{0} NICK {0}\r\n", cmd[1]);
   let _ = stream.write(response.as_bytes());
 }
 
-fn handle_list(ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_list(ref mut stream: &TcpStream, state: Arc<Mutex<&mut IRCState>>) {
   println!("recieved LIST command");
   let ref mut channels = state.lock().unwrap().channels;
   let mut response : String = ":localhost 321 jeem Channel :Users  Name\r\n".into();
@@ -117,28 +120,28 @@ fn handle_list(ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
   let _ = stream.write(response.as_bytes());
 }
 
-fn handle_join(cmd: Vec<&str>, ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
-  println!("recieved JOIN command");
-  let ref mut users = state.lock().unwrap().users;
-  let ref mut channels = state.lock().unwrap().channels;
-  let addr = stream.peer_addr().unwrap();
-  let found_user = users.iter().find(|x| {
-    x.address.ip() == addr.ip() && x.address.port() == addr.port()
-  });
-  let found_channel = channels.iter().find(|x| {
-    x.name == cmd[1]
-  });
+fn handle_join(cmd: Vec<&str>, ref mut stream: &TcpStream, state: Arc<Mutex<&mut IRCState>>) {
+  // println!("recieved JOIN command");
+  // let ref mut users = state.lock().unwrap().users;
+  // let ref mut channels = state.lock().unwrap().channels;
+  // let addr = stream.peer_addr().unwrap();
+  // let found_user: Option<&mut User> = users.iter().find(|x| {
+  //   x.address.ip() == addr.ip() && x.address.port() == addr.port()
+  // });
+  // let found_channel: Option<&mut Channel> = channels.iter().find(|x| {
+  //   x.name == cmd[1]
+  // });
 
-  let tomatch = (found_user, found_channel);
-  // Honestly don't know how to handle this
-  // Can't get mutable reference to channel.users
+  // let tomatch: (Optional<&mut User>, Optional<&Mut Channel>) = (found_user, found_channel);
+  // // Honestly don't know how to handle this
+  // // Can't get mutable reference to channel.users
   // let ref mut users: Vec<User>;
   // match tomatch {
   //   (Some(user), Some(channel)) => {
   //     let mut response = format!(":localhost 332 {0} {1} {2}\r\n",
   //                             user.username, cmd[1], channel.topic);
   //     let _ = stream.write(response.as_bytes());
-  //     let users = &channel.users;
+  //     let ref mut users = found_channel.unwrap().users;
   //     users.push(*user);
   //     let current_users = channel.users.iter().fold("".to_string(), |acc, x| {
   //       x.username + " " + &acc
@@ -167,15 +170,15 @@ fn handle_quit(cmd: Vec<&str>, ref mut stream: &TcpStream) {
   //TODO: add logic to remove that user
 }
 
-fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: &Arc<Mutex<IRCState>>) {
+fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: Arc<Mutex<&mut IRCState>>) {
   let tmp = String::from_utf8_lossy(cmd);
   let command: Vec<&str> = tmp.split_whitespace().collect();
 
   match command[0] {
-      "NICK" => handle_nick(command, stream, &state),
-      "USER" => handle_user(command, stream, &state),
-      "LIST" => handle_list(stream, &state),
-      "JOIN" => handle_join(command, stream, &state),
+      "NICK" => handle_nick(command, stream, state),
+      "USER" => handle_user(command, stream, state),
+      "LIST" => handle_list(stream, state),
+      "JOIN" => handle_join(command, stream, state),
       "PING" => handle_ping(command, stream),
       "CAP" => handle_cap(stream),
       "QUIT" => handle_quit(command, stream),
@@ -183,7 +186,7 @@ fn handle_command(cmd: &[u8], ref mut stream: &TcpStream, state: &Arc<Mutex<IRCS
   }
 }
 
-fn handle_client(mut stream: TcpStream, state: Arc<Mutex<IRCState>>) {
+fn handle_client(mut stream: TcpStream, state: &Arc<Mutex<&mut IRCState>>) {
   let mut buf;
   loop {
     buf = [0; 512];
@@ -198,7 +201,7 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<IRCState>>) {
       },
     };
 
-    handle_command(&buf, &stream, &state);
+    handle_command(&buf, &stream, *state);
     // println!("\t{:?}\n\t", state.lock().unwrap().channels);
     println!("User at address {} said {}\n", stream.peer_addr().unwrap(), String::from_utf8_lossy(&buf));
   }
