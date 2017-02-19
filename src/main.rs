@@ -62,6 +62,25 @@ impl Channel {
     }
   }
 
+  fn remove_user(&mut self, name: String) {
+      let ref mut users = self.users;
+      let ref mut streams = self.user_streams;
+      println!("removing {}", name);
+
+      for i in 0..users.len() {
+        if users[i].username == name {
+          for j in 0..streams.len() {
+            if users[i].address.ip() == streams[j].peer_addr().unwrap().ip() && 
+               users[i].address.port() == streams[j].peer_addr().unwrap().port() {
+              users.remove(i);
+              streams.remove(j);
+              return;
+           }
+        }
+      }
+    }
+  }
+
   fn get_streams(&mut self) -> &mut Vec<TcpStream>{
     return &mut self.user_streams;
   }
@@ -168,7 +187,7 @@ fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
       let response = current_users + "\r\n";
       let _ = stream.write(response.as_bytes());
     },
-    (Some(u), _) => {
+    (Some(_), _) => {
       // No such channel exists
       // TODO
     },
@@ -177,6 +196,26 @@ fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
       // TODO
     }
   }
+}
+
+fn handle_part(cmd: Vec<&str>, mut stream: &TcpStream) {
+  let mut channels = CHANNELS.lock().unwrap();
+
+  for channel in channels.iter_mut() {
+    if channel.name == cmd[1] {
+      let ref client = addr_to_user(stream).unwrap();
+      channel.remove_user(String::from(client.clone().username));
+      println!("removing user");
+    }
+  }
+  let client = addr_to_user(stream).unwrap();
+  let mut msg = String::from(cmd[2]);
+  for i in 3..cmd.len(){
+    msg += " ";
+    msg += cmd[i];
+  }
+  let response = format!(":{0} PART {1} {2}\r\n", client.username, cmd[1], msg);
+  let _ = stream.write(response.as_bytes());
 }
 
 fn handle_ping(cmd: Vec<&str>, mut stream: &TcpStream) {
@@ -302,6 +341,7 @@ fn handle_command(cmd: &[u8], stream: &TcpStream) {
       "PONG" => handle_pong(),
       "CAP" => handle_cap(stream),
       "PRIVMSG" => handle_privmsg(command, stream),
+      "PART" => handle_part(command, stream),
       "QUIT" => handle_quit(stream),
       _ => println!("unknown command {}", command[0])
   }
