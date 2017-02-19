@@ -236,11 +236,22 @@ fn handle_quit(stream: &TcpStream) {
     let user = users[i].clone();
     if user.address.ip() == addr.ip() && user.address.port() == addr.port() {
       users.remove(i);
-      
+      break;
     }
   }
-  let _ = stream.shutdown(Shutdown::Both);
+  let mut streams = USER_STREAMS.lock().unwrap();
+  for i in 0..streams.len() {
+    match streams[i].peer_addr() {
+      Err(e) => return,
+      _ => {},
+    }
+    if streams[i].peer_addr().unwrap().ip() == addr.ip() && streams[i].peer_addr().unwrap().port() == addr.port() {
+      // streams.remove(i);
+      break;
+    }
+  }
   println!("User at address {} disconnected", stream.peer_addr().unwrap());
+  let _ = stream.shutdown(Shutdown::Both);
   //TODO: remove user from their channels
 }
 
@@ -300,6 +311,7 @@ fn handle_privmsg(cmd: Vec<&str>, stream: &TcpStream) {
 
   for c in channels.iter_mut() {
     if c.name == channel_name {
+      println!("broadcasting to {}", channel_name);
       for mut ustream in c.get_streams() {
         if ustream.peer_addr().unwrap().ip() != stream.peer_addr().unwrap().ip() || 
            ustream.peer_addr().unwrap().port() != stream.peer_addr().unwrap().port() {
@@ -315,7 +327,6 @@ fn handle_privmsg(cmd: Vec<&str>, stream: &TcpStream) {
       }
     }
   }
-  println!("broadcasting to {}", channel_name);
 }
 
 fn refresh(stream: &TcpStream) {
@@ -362,10 +373,10 @@ fn handle_client(mut stream: TcpStream) {
   
   thread::spawn(move || {
     let to_sleep = time::Duration::from_secs(60);
-    thread::sleep(time::Duration::from_secs(10));
+    // thread::sleep(time::Duration::from_secs(10));
     loop {
-      println!("PINGING");
       thread::sleep(to_sleep);
+      println!("PINGING");
       let _ = clone.write("PING\r\n".as_bytes());
       increment(&clone);
       match addr_to_user(&clone) {
@@ -388,11 +399,11 @@ fn handle_client(mut stream: TcpStream) {
   loop {
     buf = [0; 512];
     match stream.read(&mut buf) {
-      Err(e) => panic!("Error handling client: {}", e),
+      Err(e) => { println!("Error handling client: {}", e); return; },
       Ok(m) => {
         if m == 0 {
           handle_quit(&stream);
-          break;
+          return;
         }
       }
     }
