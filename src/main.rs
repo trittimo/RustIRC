@@ -180,7 +180,7 @@ fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
 }
 
 fn handle_ping(cmd: Vec<&str>, mut stream: &TcpStream) {
-  let response : String = String::from("PONG :\r\n") + cmd[1];
+  let response : String = format!("PONG :{}\r\n", cmd[1]);
   let _ = stream.write(response.as_bytes()); 
 }
 
