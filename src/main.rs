@@ -9,6 +9,7 @@ extern crate lazy_static;
 lazy_static!{
   static ref USERS: Arc<Mutex<Vec<User>>>  = Arc::new(Mutex::new(Vec::new()));
   static ref CHANNELS: Arc<Mutex<Vec<Channel>>> = Arc::new(Mutex::new(Vec::new()));
+  static ref USER_STREAMS: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
 }
 
 #[derive(Clone)]
@@ -70,6 +71,11 @@ fn handle_user(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved USER command");
   let client = addr_to_user(stream).unwrap();
 
+  {
+    let mut streams = USER_STREAMS.lock().unwrap();
+    streams.push(stream.try_clone().unwrap());
+  }
+
   let ref mut users = USERS.lock().unwrap();
   for user in users.iter_mut() {
     if user.address == client.address {
@@ -92,7 +98,6 @@ fn handle_user(cmd: Vec<&str>, mut stream: &TcpStream) {
 fn handle_nick(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved NICK command");
 
-  
   let client = addr_to_user(stream);
   let mut users = USERS.lock().unwrap();
 
@@ -160,7 +165,8 @@ fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
       let current_users = c.users.iter().fold("".to_string(), |acc, x| {
         x.username.clone() + " " + &acc
       });
-      let _ = stream.write(current_users.as_bytes());
+      let response = current_users + "\r\n";
+      let _ = stream.write(response.as_bytes());
     },
     (Some(u), _) => {
       // No such channel exists
@@ -179,7 +185,7 @@ fn handle_ping(cmd: Vec<&str>, mut stream: &TcpStream) {
 }
 
 fn handle_cap(mut stream: &TcpStream) {
-  let response = "CAP * LS :multi-prefix sasl=EXTERNAL";
+  let response = "CAP * LS :multi-prefix sasl=EXTERNAL\r\n";
   let _ = stream.write(response.as_bytes());
 }
 
@@ -195,7 +201,7 @@ fn handle_quit(stream: &TcpStream) {
     }
   }
   let _ = stream.shutdown(Shutdown::Both);
-  println!("User at address {} disconnected\n", stream.peer_addr().unwrap());
+  println!("User at address {} disconnected", stream.peer_addr().unwrap());
   //TODO: remove user from their channels
 }
 
@@ -218,6 +224,37 @@ fn addr_to_user(stream: &TcpStream) -> Option<User> {
 fn handle_privmsg(cmd: Vec<&str>, stream: &TcpStream) {
   println!("recieved PRIVMSG\n");
   let channel_name = cmd[1];
+
+  if channel_name.as_bytes()[0] != "#".as_bytes()[0] {
+    println!("pm to a person");
+    let sender_name = addr_to_user(stream).unwrap().username;
+    let mut msg = String::from(cmd[2]);
+    for i in 3..cmd.len() {
+      msg += " ";
+      msg += cmd[i];
+    }
+
+    let response = format!(":{0} PRIVMSG {1} {2}\r\n", sender_name, cmd[1], msg);
+
+    let mut streams = USER_STREAMS.lock().unwrap();
+    let users = USERS.lock().unwrap();
+
+    for user in users.iter() {
+      if user.username == channel_name {
+        for mut strm in streams.iter_mut() {
+          if strm.peer_addr().unwrap().ip() == user.address.ip() && 
+             strm.peer_addr().unwrap().port() == user.address.port() {
+              let _ = strm.write(response.as_bytes());
+              return;
+           }
+        }
+      }
+    }
+
+    return;
+  }
+
+
   let mut channels =  CHANNELS.lock().unwrap();
 
   let user = addr_to_user(stream).unwrap();
