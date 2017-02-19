@@ -3,6 +3,6 @@ Our project will be a minimally functional IRC server. We will break down the as
 1. [5 points] Receive connections from a client, and send them the motd
 2. [20 points] Receive heartbeats from the client, and disconnect them if a heartbeat is not received within a certain interval
 3. [20 points] Receive messages from the client
-4. [20 points] Forward messages to everyone
+4. [20 points] Forward messages to everyone in the channel
 5. [20 points] Support for multiple channels
 6. [15 points] Support for whisper messages
