@@ -47,7 +47,8 @@ impl User {
 struct Channel {
   name: String,
   topic: String,
-  users: Vec<User>
+  users: Vec<User>,
+  user_streams: Vec<TcpStream>
 }
 
 impl Channel {
@@ -55,25 +56,61 @@ impl Channel {
     Channel {
       name: String::from(name),
       topic: String::from(topic),
-      users: Vec::new()
+      users: Vec::new(),
+      user_streams: Vec::new()
     }
+  }
+
+  fn get_streams(&mut self) -> &mut Vec<TcpStream>{
+    return &mut self.user_streams;
   }
 }
 
 fn handle_user(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved USER command");
+  let client = addr_to_user(stream).unwrap();
+
   let ref mut users = USERS.lock().unwrap();
-  users.push(User::new(cmd[1], cmd[1], cmd[2], cmd[3], stream.peer_addr().unwrap()));
+  for user in users.iter_mut() {
+    if user.address == client.address {
+
+      user.realname = String::from(cmd[1]);
+      user.hostname = String::from(cmd[2]);
+      user.servername = String::from(cmd[3]);
+    }
+  }
+
+  // users.push(User::new(cmd[1], cmd[1], cmd[2], cmd[3], stream.peer_addr().unwrap()));
   let mut response = format!("PING :3813401942\r\n");
   let _ = stream.write(response.as_bytes());
 
-  response = String::from(":localhost 001 jeem :Welcome to RustIRC!\r\n");
+  response = String::from(format!(":localhost 001 {} :Welcome to RustIRC!\r\n", cmd[1]));
 
   let _ = stream.write(response.as_bytes());
 }
 
 fn handle_nick(cmd: Vec<&str>, mut stream: &TcpStream) {
   println!("recieved NICK command");
+
+  
+  let client = addr_to_user(stream);
+  let mut users = USERS.lock().unwrap();
+
+  match client {
+      Some(c) => {
+        for user in users.iter_mut() {
+          if user.address == c.address {
+            user.username = String::from(cmd[1]);
+          }
+        }
+      },
+      None =>{
+        users.push(User::new(cmd[1], "", "", "", stream.peer_addr().unwrap()));
+      },
+  }
+
+  
+
   let response = format!(":{0} NICK {0}\r\n", cmd[1]);
   let _ = stream.write(response.as_bytes());
 }
@@ -81,14 +118,14 @@ fn handle_nick(cmd: Vec<&str>, mut stream: &TcpStream) {
 fn handle_list(mut stream: &TcpStream) {
   println!("recieved LIST command");
   let ref mut channels = CHANNELS.lock().unwrap();
-  let mut response : String = String::from(":localhost 321 jeem Channel :Users  Name\r\n");
+  let mut response : String = String::from(":localhost 321 RustIRC Channel :Users  Name\r\n");
   for channel in channels.iter() {
-    response = response + format!(":localhost 322 jeem {0} {1} :{2}\r\n", 
+    response = response + format!(":localhost 322 RustIRC {0} {1} :{2}\r\n", 
                                     channel.name.as_str(), 
                                     channel.users.len(), 
                                     channel.topic.as_str()).as_str();
   }
-  response = response + ":localhost 323 jeem :End of /LIST\r\n";
+  response = response + ":localhost 323 RustIRC :End of /LIST\r\n";
 
   let _ = stream.write(response.as_bytes());
 }
@@ -115,10 +152,11 @@ fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
 
   match (user, channel) {
     (Some(u), Some(c)) => {
-      let response = format!(":localhost 332 {0} {1} {2}\r\n",
-                              u.username, cmd[1], c.topic);
+      let response = format!(":localhost 332 {0} {1} :{2}\r\n",
+                              u.username, cmd[1], c.topic.as_str());
       let _ = stream.write(response.as_bytes());
       c.users.push(u.clone());
+      c.user_streams.push(stream.try_clone().unwrap());
       let current_users = c.users.iter().fold("".to_string(), |acc, x| {
         x.username.clone() + " " + &acc
       });
@@ -136,7 +174,7 @@ fn handle_join(cmd: Vec<&str>, mut stream: &TcpStream) {
 }
 
 fn handle_ping(cmd: Vec<&str>, mut stream: &TcpStream) {
-  let response : String = String::from("PONG :") + cmd[1];
+  let response : String = String::from("PONG :\r\n") + cmd[1];
   let _ = stream.write(response.as_bytes()); 
 }
 
@@ -172,34 +210,35 @@ fn addr_to_user(stream: &TcpStream) -> Option<User> {
   for x in users.iter() {
     if x.address.ip() == addr.ip() && x.address.port() == addr.port() {
       return Some(x.clone());
-    } else {
-      println!("ip {:?} != {:?}\naddr {:?} !+ {:?}\n", x.address.ip(), addr.ip(), x.address.port(), addr.port());
-    }
+    } 
   }
   None
 }
 
-fn handle_privmsg(cmd: Vec<&str>, mut stream: &TcpStream) {
+fn handle_privmsg(cmd: Vec<&str>, stream: &TcpStream) {
   println!("recieved PRIVMSG\n");
   let channel_name = cmd[1];
-  let channels =  CHANNELS.lock().unwrap();
+  let mut channels =  CHANNELS.lock().unwrap();
 
-  for c in channels.iter() {
+  let user = addr_to_user(stream).unwrap();
+
+  for c in channels.iter_mut() {
     if c.name == channel_name {
-      let user = addr_to_user(stream);
-      match user {
-        Some(u) => {
-          let response = String::from(format!(":{0} PRIVMSG {1} {2}", u.username, channel_name, cmd[3]));
-          let _ = stream.write(response.as_bytes());
-        },
-        None => {
-          println!("who dafaq is dis?");
+      for mut ustream in c.get_streams() {
+        if ustream.peer_addr().unwrap().ip() != stream.peer_addr().unwrap().ip() || 
+           ustream.peer_addr().unwrap().port() != stream.peer_addr().unwrap().port() {
+
+          let mut msg = String::from(cmd[2]);
+          for i in 3..cmd.len() {
+            msg += " ";
+            msg += cmd[i];
+          }
+          let response = String::from(format!(":{0} PRIVMSG {1} {2}\r\n", user.username, channel_name, msg));
+          let _ = ustream.write(response.as_bytes());
         }
       }
-
     }
   }
-
   println!("broadcasting to {}", channel_name);
 }
 
@@ -245,7 +284,7 @@ fn handle_client(mut stream: TcpStream) {
   let mut clone = stream.try_clone().unwrap();
   
   thread::spawn(move || {
-    let to_sleep = time::Duration::from_secs(5);
+    let to_sleep = time::Duration::from_secs(60);
     thread::sleep(time::Duration::from_secs(10));
     loop {
       println!("PINGING");
