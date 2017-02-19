@@ -145,15 +145,27 @@ fn handle_cap(mut stream: &TcpStream) {
   let _ = stream.write(response.as_bytes());
 }
 
-// fn handle_quit(cmd: Vec<&str>, stream: &TcpStream) {
-//   stream.shutdown(Shutdown::Both);
-//   //TODO: add logic to remove that user
-// }
+fn handle_quit(stream: &TcpStream) {
+  let addr = stream.peer_addr().unwrap();
 
-fn handle_pong(mut stream: &TcpStream) {
+  let mut users = USERS.lock().unwrap();
+  for i in 0..users.len() {
+    let user = users[i].clone();
+    if user.address.ip() == addr.ip() && user.address.port() == addr.port() {
+      users.remove(i);
+      
+    }
+  }
+  let _ = stream.shutdown(Shutdown::Both);
+  println!("User at address {} disconnected\n", stream.peer_addr().unwrap());
+  //TODO: remove user from their channels
+}
+
+fn handle_pong() {
   println!("received PONG");
 }
 
+// returns a copy of the user if it does exist
 fn addr_to_user(stream: &TcpStream) -> Option<User> {
   let users = USERS.lock().unwrap();
   let addr = stream.peer_addr().unwrap();
@@ -211,10 +223,10 @@ fn handle_command(cmd: &[u8], stream: &TcpStream) {
       "LIST" => handle_list(stream),
       "JOIN" => handle_join(command, stream),
       "PING" => handle_ping(command, stream),
-      "PONG" => handle_pong(stream),
+      "PONG" => handle_pong(),
       "CAP" => handle_cap(stream),
       "PRIVMSG" => handle_privmsg(command, stream),
-      // "QUIT" => handle_quit(command, stream),
+      "QUIT" => handle_quit(stream),
       _ => println!("unknown command {}", command[0])
   }
 }
@@ -231,8 +243,10 @@ fn increment(stream: &TcpStream) {
 
 fn handle_client(mut stream: TcpStream) {
   let mut clone = stream.try_clone().unwrap();
+  
   thread::spawn(move || {
     let to_sleep = time::Duration::from_secs(5);
+    thread::sleep(time::Duration::from_secs(10));
     loop {
       println!("PINGING");
       thread::sleep(to_sleep);
@@ -240,14 +254,15 @@ fn handle_client(mut stream: TcpStream) {
       increment(&clone);
       match addr_to_user(&clone) {
         Some(user) => {
-          println!("Couldn't find user");
+          println!("{:?}", user.last_pong);
           if user.last_pong > 5 {
-            println!("Disconnecting user because they didn't respond");
-            let _ = clone.shutdown(Shutdown::Both);
+            // println!("Disconnecting user because they didn't respond");
+            handle_quit(&clone);
+            return;
           }
         },
         _ => {
-          // Do nothing
+          return;
         }
       }
     }
@@ -260,8 +275,7 @@ fn handle_client(mut stream: TcpStream) {
       Err(e) => panic!("Error handling client: {}", e),
       Ok(m) => {
         if m == 0 {
-          // TODO remove user from channel
-          println!("User at address {} disconnected\n", stream.peer_addr().unwrap());
+          handle_quit(&stream);
           break;
         }
       }
