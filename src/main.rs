@@ -231,10 +231,19 @@ fn handle_cap(mut stream: &TcpStream) {
 fn handle_quit(stream: &TcpStream) {
   let addr = stream.peer_addr().unwrap();
 
+  let mut channels = CHANNELS.lock().unwrap();
   let mut users = USERS.lock().unwrap();
   for i in 0..users.len() {
     let user = users[i].clone();
     if user.address.ip() == addr.ip() && user.address.port() == addr.port() {
+      for j in 0..channels.len(){
+        for k in 0..channels[j].users.len(){
+          if channels[j].users[k].username == user.username {
+            channels[j].users.remove(k);
+            break;
+          }
+        }
+      }
       users.remove(i);
       break;
     }
@@ -246,12 +255,15 @@ fn handle_quit(stream: &TcpStream) {
       _ => {},
     }
     if streams[i].peer_addr().unwrap().ip() == addr.ip() && streams[i].peer_addr().unwrap().port() == addr.port() {
-      // streams.remove(i);
+      streams.remove(i);
       break;
     }
   }
   println!("User at address {} disconnected", stream.peer_addr().unwrap());
   let _ = stream.shutdown(Shutdown::Both);
+
+
+
   //TODO: remove user from their channels
 }
 
@@ -261,6 +273,11 @@ fn handle_pong() {
 
 // returns a copy of the user if it does exist
 fn addr_to_user(stream: &TcpStream) -> Option<User> {
+  match stream.peer_addr() {
+    Err(_) => return None,
+    _ => {}
+  } 
+
   let users = USERS.lock().unwrap();
   let addr = stream.peer_addr().unwrap();
   for x in users.iter() {
@@ -372,17 +389,18 @@ fn handle_client(mut stream: TcpStream) {
   let mut clone = stream.try_clone().unwrap();
   
   thread::spawn(move || {
-    let to_sleep = time::Duration::from_secs(60);
+    let to_sleep = time::Duration::from_secs(10);
     // thread::sleep(time::Duration::from_secs(10));
     loop {
       thread::sleep(to_sleep);
-      println!("PINGING");
-      let _ = clone.write("PING\r\n".as_bytes());
-      increment(&clone);
       match addr_to_user(&clone) {
         Some(user) => {
           println!("{:?}", user.last_pong);
-          if user.last_pong > 5 {
+          println!("PINGING");
+          let _ = clone.write("PING\r\n".as_bytes());
+          increment(&clone);
+          if user.last_pong > 2 {
+
             // println!("Disconnecting user because they didn't respond");
             handle_quit(&clone);
             return;
@@ -392,6 +410,7 @@ fn handle_client(mut stream: TcpStream) {
           return;
         }
       }
+      
     }
   });
 

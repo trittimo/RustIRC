@@ -43,7 +43,9 @@ class RustIRCTest(unittest.TestCase):
 	def tearDownClass(self):
 		print("Attempting to shut down RustIRCTest")
 		for s in self.sockets:
-			send(s, "PART #general :done")
+			send(s, "PART #general :done\r\n")
+			time.sleep(1)
+			send(s, "QUIT\r\n")
 			time.sleep(1)
 			s.close()
 
@@ -108,15 +110,12 @@ class RustIRCTest(unittest.TestCase):
 		self.assertEqual(resp, "PONG :trittimo")
 		print("\tPING/PONG work")
 
-		# print("Testing hearbeat -- if we ignore for 10 seconds the stream should be shutdown")
-		# time.sleep(3)
-		# send(self.sockets[0], "LIST")
-		# resp = recv(self.sockets[1])
-		# self.assertEqual(resp, "")
-		# print("\tHeartbeats work")
-
-
-
+		print("Testing hearbeat -- if we ignore for 10 seconds the stream should be shutdown")
+		time.sleep(70)
+		send(self.sockets[0], "LIST")
+		resp = recv(self.sockets[1])
+		self.assertEqual(resp, "")
+		print("\tHeartbeats work")
 
 if __name__ == '__main__':
 	signal.signal(signal.SIGINT, lambda x,y: sys.exit(0))
