@@ -111,11 +111,12 @@ class RustIRCTest(unittest.TestCase):
 		print("\tPING/PONG work")
 
 		print("Testing hearbeat -- if we ignore for 10 seconds the stream should be shutdown")
-		time.sleep(70)
-		send(self.sockets[0], "LIST")
-		resp = recv(self.sockets[1])
-		self.assertEqual(resp, "")
-		print("\tHeartbeats work")
+		time.sleep(30)
+		try:
+			send(self.sockets[0], "LIST")
+			resp = recv(self.sockets[1])
+		except ConnectionAbortedError:
+			print("\tHeartbeats work")
 
 if __name__ == '__main__':
 	signal.signal(signal.SIGINT, lambda x,y: sys.exit(0))
